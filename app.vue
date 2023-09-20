@@ -1,5 +1,138 @@
+<script setup lang="ts">
+import type ImageCropper from "@/components/image-cropper.client.vue";
+import JSZip from "jszip";
+
+const imageCropper = ref<InstanceType<typeof ImageCropper>>();
+
+const { fbGrids, igGrids } = sizes;
+const gridSelectIndexes = reactive({
+  which: "fb",
+  fb: 0,
+  ig: 0,
+});
+const gridSelection = computed(() =>
+  gridSelectIndexes.which === "fb"
+    ? fbGrids[gridSelectIndexes.fb]
+    : igGrids[gridSelectIndexes.ig]
+);
+
+function onTabChange(index: number) {
+  gridSelectIndexes.which = index === 0 ? "ig" : "fb";
+}
+
+async function onSubmit() {
+  const canvas = await imageCropper.value?.exportSelection();
+  console.log({ canvas });
+  if (!canvas) return;
+
+  const blobs: Blob[] = [];
+
+  for (const box of gridSelection.value.boxes) {
+    const tempCanvas = document.createElement("canvas");
+    const context = tempCanvas.getContext("2d");
+    if (!context) return;
+    const [x, y, width, height] = box;
+    tempCanvas.width = width * canvas.width;
+    tempCanvas.height = height * canvas.height;
+    context.drawImage(
+      canvas,
+      x * canvas.width,
+      y * canvas.height,
+      width * canvas.width,
+      height * canvas.height,
+      0,
+      0,
+      width * canvas.width,
+      height * canvas.height
+    );
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      tempCanvas.toBlob((blob) => {
+        if (!blob) return reject("Failed to convert canvas to blob");
+        resolve(blob);
+      });
+    });
+
+    blobs.push(blob);
+  }
+
+  const zip = new JSZip();
+  blobs.forEach((blob, i) => {
+    zip.file(`image-${i}.png`, blob);
+  });
+
+  const content = await zip.generateAsync({ type: "blob" });
+  const url = URL.createObjectURL(content);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "images.zip";
+  link.click();
+}
+</script>
+
 <template>
-  <div>
-    <NuxtWelcome />
+  <div class="flex gap-6 p-10 h-screen items-center">
+    <!-- Tailwind WTF? -->
+    <div class="flex-1" style="aspect-ratio: 16/9">
+      <ImageCropper
+        :aspect-ratio="gridSelection['aspect-ratio']"
+        :grid="gridSelection.boxes"
+        ref="imageCropper"
+      />
+    </div>
+
+    <div class="flex flex-col gap-4 w-60">
+      <UTabs
+        :items="([
+                  { label: 'Instagram', slot: 'ig', icon: 'i-iconoir-instagram' },
+                  { label: 'Facebook', slot: 'fb', icon: 'i-iconoir-facebook' },
+                ] as any[])"
+        @change="onTabChange"
+      >
+        <template #default="{ item, index, selected }">
+          <div class="flex items-center gap-2 relative truncate">
+            <UIcon :name="item.icon" class="w-4 h-4 flex-shrink-0" />
+            <span class="truncate">{{ item.label }}</span>
+            <span
+              v-if="selected"
+              class="absolute -right-4 w-2 h-2 rounded-full bg-primary-500 dark:bg-primary-400"
+            />
+          </div>
+        </template>
+        <template #fb>
+          <div
+            class="grid grid-cols-3 content-start gap-2 h-60 overflow-y-auto"
+          >
+            <UButton
+              style="aspect-ratio: 1"
+              class="p-2"
+              v-for="(grid, i) in fbGrids"
+              :key="`grid-${i}`"
+              @click="gridSelectIndexes.fb = i"
+              :variant="gridSelectIndexes.fb === i ? 'solid' : 'outline'"
+            >
+              <GridPreview :grid="grid" />
+            </UButton>
+          </div>
+        </template>
+        <template #ig>
+          <div
+            class="grid grid-cols-3 content-start gap-2 h-60 overflow-y-auto"
+          >
+            <UButton
+              style="aspect-ratio: 1"
+              class="p-2"
+              v-for="(grid, i) in igGrids"
+              :key="`grid-${i}`"
+              @click="gridSelectIndexes.ig = i"
+              :variant="gridSelectIndexes.ig === i ? 'solid' : 'outline'"
+            >
+              <GridPreview :grid="grid" />
+            </UButton>
+          </div>
+        </template>
+      </UTabs>
+      <UButton @click="onSubmit" class="justify-center">Export</UButton>
+    </div>
   </div>
 </template>
