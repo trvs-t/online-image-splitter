@@ -2,6 +2,33 @@
 import type ImageCropper from "@/components/image-cropper.client.vue";
 import JSZip from "jszip";
 
+const file = ref<File>();
+const imgUrl = computed(() => file.value && URL.createObjectURL(file.value));
+const imgAspectRatio = computedAsync(async () => {
+  if (!file.value) return;
+  const { width, height } = await getImageDimensions(imgUrl.value!);
+  return width / height;
+}, 16 / 9);
+watch(imgUrl, (_, prev) => {
+  if (prev) URL.revokeObjectURL(prev);
+});
+onUnmounted(() => {
+  if (imgUrl.value) URL.revokeObjectURL(imgUrl.value);
+});
+function onDrop(files: File[]) {
+  file.value = files[0];
+}
+
+const imageInput = ref<HTMLInputElement>();
+function onSelectImageClick() {
+  imageInput.value?.click();
+}
+function onInput(event: Event) {
+  const files = (event.target as HTMLInputElement).files;
+  if (!files) return;
+  onDrop(Array.from(files));
+}
+
 const imageCropper = ref<InstanceType<typeof ImageCropper>>();
 
 const { fbGrids, igGrids } = sizes;
@@ -73,12 +100,34 @@ async function onSubmit() {
 <template>
   <div class="flex gap-6 p-10 h-screen items-center">
     <!-- Tailwind WTF? -->
-    <div class="flex-1" style="aspect-ratio: 16/9">
-      <ImageCropper
-        :aspect-ratio="gridSelection['aspect-ratio']"
-        :grid="gridSelection.boxes"
-        ref="imageCropper"
+    <div class="flex-1 text-center">
+      <div class="grid grid-rows-1 grid-cols-1" style="aspect-ratio: 16/9">
+        <div
+          v-if="imgUrl"
+          class="max-w-full max-h-full row-start-1 row-end-1 col-start-1 col-end-1 justify-self-center"
+          :style="{
+            aspectRatio: imgAspectRatio,
+          }"
+        >
+          <ImageCropper
+            :src="imgUrl"
+            :selection-aspect-ratio="gridSelection['aspect-ratio']"
+            :grid="gridSelection.boxes"
+            ref="imageCropper"
+          />
+        </div>
+        <div class="w-full h-full row-start-1 row-end-1 col-start-1 col-end-1">
+          <Dropzone :show="!file" @drop="onDrop" />
+        </div>
+      </div>
+      <input
+        ref="imageInput"
+        type="file"
+        accept="image/*"
+        hidden
+        @change="onInput"
       />
+      <UButton @click="onSelectImageClick"> Select Image </UButton>
     </div>
 
     <div class="flex flex-col gap-4 w-60">
@@ -111,7 +160,12 @@ async function onSubmit() {
               @click="gridSelectIndexes.fb = i"
               :variant="gridSelectIndexes.fb === i ? 'solid' : 'outline'"
             >
-              <GridPreview :grid="grid" />
+              <GridPreview
+                :grid="grid"
+                :inner-class="
+                  gridSelectIndexes.fb === i ? 'border-white' : 'border-primary'
+                "
+              />
             </UButton>
           </div>
         </template>
@@ -127,7 +181,12 @@ async function onSubmit() {
               @click="gridSelectIndexes.ig = i"
               :variant="gridSelectIndexes.ig === i ? 'solid' : 'outline'"
             >
-              <GridPreview :grid="grid" />
+              <GridPreview
+                :grid="grid"
+                :inner-class="
+                  gridSelectIndexes.ig === i ? 'border-white' : 'border-primary'
+                "
+              />
             </UButton>
           </div>
         </template>

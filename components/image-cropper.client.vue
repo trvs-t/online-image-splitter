@@ -1,15 +1,25 @@
 <script lang="ts">
 import "cropperjs";
-import { CropperSelection } from "cropperjs";
+import { CropperCanvas, CropperImage, CropperSelection } from "cropperjs";
+
+interface ImageMetadata {
+  canvasWidth: number;
+  canvasHeight: number;
+  imageWidth: number;
+  imageHeight: number;
+  src: string;
+}
 </script>
 <script setup lang="ts">
 const props = defineProps<{
   // grid in array of [top, left, width, height]
   // relative to [0, 0, 1, 1]
   grid: number[][];
-  aspectRatio: number;
+  selectionAspectRatio: number;
+  src?: string;
 }>();
 
+// track select for drawing split frame
 const selection = reactive({
   x: 0,
   y: 0,
@@ -17,27 +27,119 @@ const selection = reactive({
   height: 0,
 });
 function onSelectionChange(event: unknown) {
+  if (!canvasEl.value) return;
   const { x, y, width, height } = (event as CustomEvent).detail;
-  selection.x = x;
-  selection.y = y;
-  selection.width = width;
-  selection.height = height;
+  const result = { x, y, width, height };
+  const { clientWidth: canvasWidth, clientHeight: canvasHeight } =
+    canvasEl.value;
+  if (selection.width != width || selection.height != height) {
+    // is resize event
+    result.width = Math.min(width, canvasWidth);
+    result.height = Math.min(height, canvasHeight);
+  }
+  result.x = Math.max(0, Math.min(x, canvasWidth - result.width));
+  result.y = Math.max(0, Math.min(y, canvasHeight - result.height));
+
+  if (
+    result.x != x ||
+    result.y != y ||
+    result.width != width ||
+    result.height != height
+  ) {
+    (event as CustomEvent).preventDefault();
+  }
+  Object.assign(selection, result);
 }
 
+const canvasEl = ref<CropperCanvas>();
 const selectionEl = ref<CropperSelection>();
+const imgEl = ref<CropperImage>();
 
+const imageMetadata = computed(
+  () =>
+    new Promise<ImageMetadata | null>((resolve) => {
+      imgEl.value?.$ready(() => {
+        if (!props.src) {
+          return resolve(null);
+        }
+        if (!canvasEl.value) {
+          return resolve(null);
+        }
+        if (!imgEl.value) {
+          return resolve(null);
+        }
+        const { clientWidth: canvasWidth, clientHeight: canvasHeight } =
+          canvasEl.value;
+
+        const { clientWidth: imageWidth, clientHeight: imageHeight } =
+          imgEl.value;
+
+        if (!canvasWidth || !canvasHeight || !imageWidth || !imageHeight) {
+          return resolve(null);
+        }
+
+        const args = {
+          canvasWidth,
+          canvasHeight,
+          imageWidth,
+          imageHeight,
+          src: props.src,
+        };
+
+        resolve(args);
+      });
+    })
+);
+
+// watch for image load and resize image / selection to fit canvas
+watch(imageMetadata, async (args$) => {
+  const args = await args$;
+  if (!args) return;
+
+  const { canvasWidth, canvasHeight, imageWidth, imageHeight } = args;
+
+  const selectionSize = Math.min(canvasWidth, canvasHeight);
+
+  const imageScaleX = canvasWidth / imageWidth;
+  const imageScaleY = canvasHeight / imageHeight;
+  const imageScale = Math.min(imageScaleX, imageScaleY);
+
+  imgEl.value?.$resetTransform().$scale(imageScale, imageScale).$center();
+
+  selectionEl.value
+    ?.$reset()
+    .$change(
+      canvasWidth / 2 - selectionSize / 2,
+      canvasHeight / 2 - selectionSize / 2,
+      selectionSize,
+      selectionSize
+    )
+    .$center();
+});
+
+// watch for selection frame aspect ratio change
+// and resize selection frame to match
 watch(
-  () => props.aspectRatio,
-  (aspectRatio) => {
+  () => props.selectionAspectRatio,
+  (aspectRatio, prev) => {
     if (!selectionEl.value) return;
-    // TODO infer whether to use width or height
-    selectionEl.value.$change(
-      selection.x,
-      selection.y,
-      selection.height * aspectRatio,
-      selection.height,
-      aspectRatio
-    );
+    if (aspectRatio >= 1) {
+      selectionEl.value.$change(
+        selection.x,
+        selection.y - (selection.width / aspectRatio - selection.height) / 2,
+        selection.width,
+        selection.width / aspectRatio,
+        aspectRatio
+      );
+    } else {
+      selectionEl.value.$change(
+        selection.x - (selection.height * aspectRatio - selection.width) / 2,
+        selection.y,
+        selection.height * aspectRatio,
+        selection.height,
+        aspectRatio
+      );
+    }
   }
 );
 
@@ -50,11 +152,12 @@ defineExpose({ exportSelection });
   <!-- <div style="position: relative; height: 100%"> -->
   <cropper-canvas
     background
-    ref="canvas"
+    ref="canvasEl"
     style="position: relative; width: 100%; height: 100%"
   >
     <cropper-image
-      src="https://source.unsplash.com/1920x1080"
+      ref="imgEl"
+      :src="src"
       alt="Picture"
       crossorigin="anonymous"
     ></cropper-image>
@@ -62,12 +165,13 @@ defineExpose({ exportSelection });
     <cropper-handle action="select" plain></cropper-handle>
     <cropper-selection
       ref="selectionEl"
-      initial-coverage="0.5"
+      initial-coverage="1"
       movable
       resizable
       zoomable
+      themeColor="rgba(0,0,0,0)"
       @change="onSelectionChange"
-      :aspect-ratio="aspectRatio"
+      :aspect-ratio="selectionAspectRatio"
     >
       <!-- <cropper-grid role="grid" covered></cropper-grid> -->
       <!-- <cropper-crosshair centered></cropper-crosshair> -->

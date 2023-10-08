@@ -1,6 +1,7 @@
 <script setup lang="ts">
 defineProps<{
   grid: (typeof sizes.fbGrids)[number];
+  innerClass?: string;
 }>();
 </script>
 <template>
@@ -11,14 +12,13 @@ defineProps<{
     <div
       v-for="(section, i) in grid.boxes"
       :key="`section-${i}`"
+      class="absolute border border-primary pointer-events-none"
+      :class="innerClass"
       :style="{
-        position: 'absolute',
         left: section[0] * 100 + '%',
         top: section[1] * 100 + '%',
         width: section[2] * 100 + '%',
         height: section[3] * 100 + '%',
-        border: '1px solid white',
-        pointerEvents: 'none',
       }"
     ></div>
   </div>
