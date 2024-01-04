@@ -9,6 +9,13 @@ interface ImageMetadata {
   imageHeight: number;
   src: string;
 }
+
+interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 </script>
 <script setup lang="ts">
 const props = defineProps<{
@@ -19,19 +26,24 @@ const props = defineProps<{
   src?: string;
 }>();
 
+const canvasEl = ref<CropperCanvas>();
+const selectionEl = ref<CropperSelection>();
+const imgEl = ref<CropperImage>();
+
 // track select for drawing split frame
-const selection = reactive({
+const selection = reactive<Box>({
   x: 0,
   y: 0,
   width: 0,
   height: 0,
 });
+// track selection for drawing grid
+// and constrain selection to canvas size
 function onSelectionChange(event: unknown) {
   if (!canvasEl.value) return;
   const { x, y, width, height } = (event as CustomEvent).detail;
   const result = { x, y, width, height };
-  const { clientWidth: canvasWidth, clientHeight: canvasHeight } =
-    canvasEl.value;
+  const { canvasWidth, canvasHeight } = metadata.value;
   if (selection.width != width || selection.height != height) {
     // is resize event
     result.width = Math.min(width, canvasWidth);
@@ -51,54 +63,74 @@ function onSelectionChange(event: unknown) {
   Object.assign(selection, result);
 }
 
-const canvasEl = ref<CropperCanvas>();
-const selectionEl = ref<CropperSelection>();
-const imgEl = ref<CropperImage>();
+function getBoundingBoxFitWithAspectRatio(
+  bounds: Box,
+  aspectRatio: number
+): Box {
+  const { x, y, width, height } = bounds;
+  const { canvasWidth, canvasHeight } = metadata.value;
+  const boundWithinCanvas = {
+    x: Math.max(0, Math.min(x, canvasWidth - width)),
+    y: Math.max(0, Math.min(y, canvasHeight - height)),
+    width: Math.min(width, canvasWidth),
+    height: Math.min(height, canvasHeight),
+  };
 
-const imageMetadata = computed(
-  () =>
-    new Promise<ImageMetadata | null>((resolve) => {
-      imgEl.value?.$ready(() => {
-        if (!props.src) {
-          return resolve(null);
-        }
-        if (!canvasEl.value) {
-          return resolve(null);
-        }
-        if (!imgEl.value) {
-          return resolve(null);
-        }
-        const { clientWidth: canvasWidth, clientHeight: canvasHeight } =
-          canvasEl.value;
+  if (aspectRatio >= 1) {
+    // landscape
+    const newHeight = boundWithinCanvas.width / aspectRatio;
+    const newWidth = boundWithinCanvas.height * aspectRatio;
+    if (newHeight <= boundWithinCanvas.height) {
+      return {
+        x: boundWithinCanvas.x,
+        y: boundWithinCanvas.y + (boundWithinCanvas.height - newHeight) / 2,
+        width: boundWithinCanvas.width,
+        height: newHeight,
+      };
+    } else {
+      return {
+        x: boundWithinCanvas.x + (boundWithinCanvas.width - newWidth) / 2,
+        y: boundWithinCanvas.y,
+        width: newWidth,
+        height: boundWithinCanvas.height,
+      };
+    }
+  } else {
+    // portrait
+    const newHeight = boundWithinCanvas.width / aspectRatio;
+    const newWidth = boundWithinCanvas.height * aspectRatio;
+    if (newHeight <= boundWithinCanvas.height) {
+      return {
+        x: boundWithinCanvas.x + (boundWithinCanvas.width - newWidth) / 2,
+        y: boundWithinCanvas.y,
+        width: newWidth,
+        height: boundWithinCanvas.height,
+      };
+    } else {
+      return {
+        x: boundWithinCanvas.x,
+        y: boundWithinCanvas.y + (boundWithinCanvas.height - newHeight) / 2,
+        width: boundWithinCanvas.width,
+        height: newHeight,
+      };
+    }
+  }
+}
 
-        const { clientWidth: imageWidth, clientHeight: imageHeight } =
-          imgEl.value;
+const { width: canvasWidthRef, height: canvasHeightRef } =
+  useElementSize(canvasEl);
+const { width: imgWidthRef, height: imgHeightRef } = useElementSize(imgEl);
 
-        if (!canvasWidth || !canvasHeight || !imageWidth || !imageHeight) {
-          return resolve(null);
-        }
+const metadata = computed<ImageMetadata>(() => ({
+  canvasWidth: canvasWidthRef.value,
+  canvasHeight: canvasHeightRef.value,
+  imageWidth: imgWidthRef.value,
+  imageHeight: imgHeightRef.value,
+  src: props.src!,
+}));
 
-        const args = {
-          canvasWidth,
-          canvasHeight,
-          imageWidth,
-          imageHeight,
-          src: props.src,
-        };
-
-        resolve(args);
-      });
-    })
-);
-
-// watch for image load and resize image / selection to fit canvas
-watch(imageMetadata, async (args$) => {
-  const args = await args$;
-  if (!args) return;
-
-  const { canvasWidth, canvasHeight, imageWidth, imageHeight } = args;
-
-  const selectionSize = Math.min(canvasWidth, canvasHeight);
+function initImageAndSelection() {
+  const { canvasWidth, canvasHeight, imageWidth, imageHeight } = metadata.value;
 
   const imageScaleX = canvasWidth / imageWidth;
   const imageScaleY = canvasHeight / imageHeight;
@@ -106,47 +138,70 @@ watch(imageMetadata, async (args$) => {
 
   imgEl.value?.$resetTransform().$scale(imageScale, imageScale).$center();
 
-  selectionEl.value
-    ?.$reset()
-    .$change(
-      canvasWidth / 2 - selectionSize / 2,
-      canvasHeight / 2 - selectionSize / 2,
-      selectionSize,
-      selectionSize
-    )
-    .$center();
+  const selectionBox = getBoundingBoxFitWithAspectRatio(
+    {
+      x: 0,
+      y: 0,
+      width: canvasWidth,
+      height: canvasHeight,
+    },
+    props.selectionAspectRatio
+  );
+  selectionEl.value?.$change(
+    selectionBox.x,
+    selectionBox.y,
+    selectionBox.width - 1,
+    selectionBox.height - 1,
+    props.selectionAspectRatio
+  );
+}
+
+// watch for image load and resize image / selection to fit canvas
+watch(metadata, (metadata) => {
+  const { canvasWidth, canvasHeight, imageWidth, imageHeight } = metadata;
+  if (
+    canvasWidth > 0 &&
+    canvasHeight > 0 &&
+    imageWidth > 0 &&
+    imageHeight > 0
+  ) {
+    initImageAndSelection();
+  }
 });
 
 // watch for selection frame aspect ratio change
 // and resize selection frame to match
 watch(
   () => props.selectionAspectRatio,
-  (aspectRatio, prev) => {
+  (aspectRatio, _) => {
     if (!selectionEl.value) return;
-    if (aspectRatio >= 1) {
-      selectionEl.value.$change(
-        selection.x,
-        selection.y - (selection.width / aspectRatio - selection.height) / 2,
-        selection.width,
-        selection.width / aspectRatio,
-        aspectRatio
-      );
-    } else {
-      selectionEl.value.$change(
-        selection.x - (selection.height * aspectRatio - selection.width) / 2,
-        selection.y,
-        selection.height * aspectRatio,
-        selection.height,
-        aspectRatio
-      );
-    }
+    const selectionBox = getBoundingBoxFitWithAspectRatio(
+      {
+        x: selection.x,
+        y: selection.y,
+        width: selection.width,
+        height: selection.height,
+      },
+      aspectRatio
+    );
+
+    selectionEl.value.$change(
+      selectionBox.x,
+      selectionBox.y,
+      selectionBox.width,
+      selectionBox.height,
+      aspectRatio
+    );
   }
 );
 
 async function exportSelection() {
   return selectionEl.value?.$toCanvas();
 }
-defineExpose({ exportSelection });
+async function resetImageAndSelection() {
+  initImageAndSelection();
+}
+defineExpose({ exportSelection, resetImageAndSelection });
 </script>
 <template>
   <!-- <div style="position: relative; height: 100%"> -->
@@ -160,6 +215,10 @@ defineExpose({ exportSelection });
       :src="src"
       alt="Picture"
       crossorigin="anonymous"
+      rotatable="false"
+      scalable="false"
+      skewable="false"
+      translatable="false"
     ></cropper-image>
     <cropper-shade hidden></cropper-shade>
     <cropper-handle action="select" plain></cropper-handle>
@@ -168,7 +227,6 @@ defineExpose({ exportSelection });
       initial-coverage="1"
       movable
       resizable
-      zoomable
       themeColor="rgba(0,0,0,0)"
       @change="onSelectionChange"
       :aspect-ratio="selectionAspectRatio"

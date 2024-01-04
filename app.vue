@@ -28,7 +28,6 @@ function onInput(event: Event) {
   if (!files) return;
   onDrop(Array.from(files));
 }
-
 const imageCropper = ref<InstanceType<typeof ImageCropper>>();
 
 const { fbGrids, igGrids } = sizes;
@@ -45,6 +44,10 @@ const gridSelection = computed(() =>
 
 function onTabChange(index: number) {
   gridSelectIndexes.which = index === 0 ? "ig" : "fb";
+}
+
+function resetImageTransform() {
+  imageCropper.value?.resetImageAndSelection();
 }
 
 async function onSubmit() {
@@ -127,7 +130,12 @@ async function onSubmit() {
         hidden
         @change="onInput"
       />
-      <UButton @click="onSelectImageClick"> Select Image </UButton>
+      <div class="mt-2 flex justify-center gap-2">
+        <UButton @click="resetImageTransform" icon="i-iconoir-restart"
+          >Reset</UButton
+        >
+        <UButton @click="onSelectImageClick"> Select Image </UButton>
+      </div>
     </div>
 
     <div class="flex flex-col gap-4 w-60">
