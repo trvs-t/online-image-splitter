@@ -3,8 +3,9 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   modules: ["@vueuse/nuxt", "@nuxt/ui"],
   ui: {
-    icons: ["iconoir"],
+    icons: ["iconoir", "mdi"],
   },
+  ssr: false,
   vite: {
     vue: {
       template: {

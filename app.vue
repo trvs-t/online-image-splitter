@@ -137,11 +137,22 @@ const presetTabs: TabItem[] = [
         hidden
         @change="onInput"
       />
-      <div class="mt-2 flex justify-center gap-2">
-        <UButton @click="resetImageTransform" icon="i-iconoir-restart"
-          >Reset</UButton
+      <div class="mt-4 flex justify-center gap-2" v-if="file">
+        <UButton
+          class="justify-center px-4"
+          variant="soft"
+          @click="onSelectImageClick"
+          icon="i-iconoir-refresh"
         >
-        <UButton @click="onSelectImageClick"> Select Image </UButton>
+          Change Image
+        </UButton>
+        <UButton
+          class="justify-center px-8"
+          @click="onSubmit"
+          size="xl"
+          icon="i-iconoir-download"
+          >Export</UButton
+        >
       </div>
     </div>
 
@@ -200,7 +211,16 @@ const presetTabs: TabItem[] = [
           </div>
         </template>
       </UTabs>
-      <UButton @click="onSubmit" class="justify-center">Export</UButton>
+      <UDivider />
+      <div class="flex justify-end">
+        <UTooltip text="Expand selection">
+          <UButton
+            variant="soft"
+            @click="resetImageTransform"
+            icon="i-mdi-arrow-expand"
+          ></UButton>
+        </UTooltip>
+      </div>
     </div>
   </div>
 </template>
