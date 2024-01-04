@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type ImageCropper from "@/components/image-cropper.client.vue";
+import type { TabItem } from "@nuxt/ui/dist/runtime/types";
 import JSZip from "jszip";
 
 const file = ref<File>();
@@ -52,7 +53,6 @@ function resetImageTransform() {
 
 async function onSubmit() {
   const canvas = await imageCropper.value?.exportSelection();
-  console.log({ canvas });
   if (!canvas) return;
 
   const blobs: Blob[] = [];
@@ -86,18 +86,25 @@ async function onSubmit() {
     blobs.push(blob);
   }
 
+  const fileName = file.value?.name.split(".")[0] ?? "image";
+
   const zip = new JSZip();
   blobs.forEach((blob, i) => {
-    zip.file(`image-${i}.png`, blob);
+    zip.file(`${fileName}-${i}.png`, blob);
   });
 
   const content = await zip.generateAsync({ type: "blob" });
   const url = URL.createObjectURL(content);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "images.zip";
+  link.download = `${fileName}.zip`;
   link.click();
 }
+
+const presetTabs: TabItem[] = [
+  { label: "Facebook", slot: "fb", icon: "i-iconoir-facebook" },
+  { label: "Instagram", slot: "ig", icon: "i-iconoir-instagram" },
+];
 </script>
 
 <template>
@@ -139,13 +146,7 @@ async function onSubmit() {
     </div>
 
     <div class="flex flex-col gap-4 w-60">
-      <UTabs
-        :items="([
-                  { label: 'Instagram', slot: 'ig', icon: 'i-iconoir-instagram' },
-                  { label: 'Facebook', slot: 'fb', icon: 'i-iconoir-facebook' },
-                ] as any[])"
-        @change="onTabChange"
-      >
+      <UTabs :items="presetTabs" @change="onTabChange">
         <template #default="{ item, index, selected }">
           <div class="flex items-center gap-2 relative truncate">
             <UIcon :name="item.icon" class="w-4 h-4 flex-shrink-0" />
